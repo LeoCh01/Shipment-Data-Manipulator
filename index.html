@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>XChange</title>
+
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+    <script type="text/javascript" src="https://unpkg.com/tabulator-tables@4.9.3/dist/js/tabulator.js"></script>
+    <script type="text/javascript" src="https://cdn.bokeh.org/bokeh/release/bokeh-2.4.2.js"></script>
+    <script type="text/javascript" src="https://cdn.bokeh.org/bokeh/release/bokeh-widgets-2.4.2.min.js"></script>
+    <script type="text/javascript" src="https://cdn.bokeh.org/bokeh/release/bokeh-tables-2.4.2.min.js"></script>
+    <script type="text/javascript" src="https://unpkg.com/@holoviz/panel@0.13.0/dist/panel.min.js"></script>
+    <script type="text/javascript">
+      Bokeh.set_log_level("info");
+    </script>
+
+    <link rel="stylesheet" href="https://pyscript.net/alpha/pyscript.css" />
+    <script defer src="https://pyscript.net/alpha/pyscript.js"></script>
+    <py-env>
+        - pandas
+        - numpy
+        - panel==0.13.1a2
+        - paths:
+            - ./IPE.csv
+            - ./IP.csv
+            - ./IE.csv
+            - ./DOM.csv
+    </py-env>
+</head>
+<body>
+
+    <div id="fileinput"></div>
+    <div id="upload"></div>
+    <div id="table"></div>
+    <div id="download"></div>
+
+    <py-script>
+
+import pandas as pd
+import numpy as np
+import asyncio
+import panel as pn
+from panel.io.pyodide import show
+
+
+from math import ceil
+from collections import OrderedDict
+from io import BytesIO
+
+<!--document.querySelector(".disclaimer").innerText = '';-->
+
+
+fileInput = pn.widgets.FileInput(accept='.csv')
+uploadButton = pn.widgets.Button(name='Upload', button_type='primary')
+
+table = pn.widgets.Tabulator(disabled=True, show_index=False)
+table.theme = 'bulma'
+document.getElementById('table').style.display = 'none'
+
+output = [None]
+
+items = [
+    'Invoice Date',
+    'Air Waybill Number',
+    'Service Type',
+    'Ship Date',
+    'Rated Weight Amount',
+    'Rated Weight Units',
+    'Pieces',
+    'SvcPkg Label',
+    'Zone Code',
+    'Net Transportation Charges',
+    'Fuel Surcharge'
+]
+
+items2 = [
+    'Invoice Date',
+    'Air Waybill Number',
+    'Service Type',
+    'Ship Date',
+    'Rated Weight Amount',
+    'Rated Weight Units',
+    'Pieces',
+    'SvcPkg Label',
+    'Zone Code',
+    'Net Transportation Charges',
+    'Fuel Surcharge'
+]
+
+items_to_zero = [
+    'Peak Surcharge',
+    'Residential Delivery',
+    'Address Correction',
+    'Extended Delivery Area',
+    'Declared Value Charge',
+    'Out of Delivery Area Tier B',
+    'Additional Handling Charge - Weight',
+    'Additional Handling Charge - Packaging',
+    'Additional Handling Charge - Dimensions',
+    'Third Party Billing',
+    'Saturday Pickup',
+    'Canada HST (ON)',
+    'Canada GST',
+    'Canada HST (NS)',
+    'Canada HST (NF)',
+    'Canada HST (PE)',
+    'Canada HST (NB)',
+    'Canada QST',
+    'Total'
+]
+
+tax = [
+    ('Canada HST (ON)', 0.13),
+    ('Canada GST', 0.05),
+    ('Canada HST (NS/NF)', 0.15),
+    ('Canada HST (PE/NB)', 0.15),
+    ('Canada QST', 0.1)
+]
+
+def process_file(*args, **kwargs):
+    if fileInput.value is not None and output[0] is None:
+
+        df = pd.read_csv(io.BytesIO(fileInput.value))
+
+        for i in items_to_zero:
+            df[i] = 0
+
+        df = df.astype({'Air Waybill Number': str})
+        df = set_charge_label(df)
+        df['Residential Delivery'] *= 2
+        df['ntc old'] = df['Net Transportation Charges']
+        df['Additional Handling Charge'] = (
+            df['Additional Handling Charge - Weight'] +
+            df['Additional Handling Charge - Packaging'] +
+            df['Additional Handling Charge - Dimensions']
+        )
+
+        df = weight_conv(df)
+        df = set_ntc(df)
+        df = set_fuel_and_tax(df)
+
+        df = set_tot(df)
+        items.append('Total')
+        df = df[items]
+        df = set_tot_row(df)
+
+        df = df.replace(0, np.nan)
+        df = df.dropna(axis=1, how='all')
+
+        df.fillna('', inplace=True)
+
+        table.value = df
+        document.getElementById('table').style.display = 'block'
+
+        document.getElementById('download').style.display = 'block'
+        output[0] = BytesIO(df.to_csv().encode())
+    else:
+        return output[0]
+
+
+uploadButton.on_click(process_file)
+
+dlButton = pn.widgets.FileDownload(filename='data.csv', callback=process_file, button_type='success')
+document.getElementById('download').style.display = 'none'
+
+await show(fileInput, 'fileinput')
+await show(uploadButton, 'upload')
+await show(table, 'table')
+await show(dlButton, 'download')
+
+
+def weight_conv(df):
+    df.loc[df['Rated Weight Units'] == 'K', 'Rated Weight Amount'] *= 2.20462
+    df['Rated Weight Amount'] = round(df['Rated Weight Amount'], 1)
+    df['Rated Weight Units'] = 'L'
+    return df
+
+
+def set_ntc(df):
+    ipe = pd.read_csv('IPE.csv', header=4)
+    ip = pd.read_csv('IP.csv', header=1)
+    ie = pd.read_csv('IE.csv', header=1)
+    dom = pd.read_csv('DOM.csv', header=1)
+    d = {
+        'FedEx International Priority': [(ip, ipe), {'Env': (0, 1), 'Pak': (4, 2), 'Pack': (9, 100)}],
+        'FedEx Economy': [dom, {'Env': (0, 1), 'Pak': (4, 1), 'Pack': (8, 100)}],
+        'FedEx International Economy': [ie, {'Env': (0, 100), 'Pak': (0, 100), 'Pack': (0, 100)}],
+        'FedEx Standard Overnight': [dom, {'Env': (0, 1), 'Pak': (4, 1), 'Pack': (8, 100)}],
+    }
+
+    no_rate = [''] * len(df)
+    ntc = []
+    for i in range(len(df)):
+        service = df['Service Type'][i]
+        zone = df['Zone Code'][i]
+        size = ceil(df['Rated Weight Amount'][i])
+        label = df['SvcPkg Label'][i]
+        t = int(df['POD Time'][i][-4:]) if df['POD Time'][i][-4:] != ' ' else 1030
+
+        if service in d:
+            if service == 'FedEx Standard Overnight':
+                ntc.append(-3)
+                no_rate[i] = 'No Rate'
+            elif 'Env' in label or 'Pak' in label or 'Pack' in label:
+                ntc.append(float(get_cost(size, d[service], label, zone, t)))
+            else:
+                ntc.append(-2)
+        else:
+            ntc.append(-1)
+
+    df['Net Transportation Charges'] = pd.Series(ntc)
+    df['Rate'] = pd.Series(no_rate)
+    df.loc[df['Rate'] == 'No Rate', 'Net Transportation Charges'] = df['ntc old'] * 1.2
+    return df
+
+
+def get_cost(n, lst, label, zone, t):
+    zone = str(int(zone)) if zone.isnumeric() else zone
+    f, d = lst
+    if isinstance(f, tuple):
+        f = f[0] if t >= 1030 else f[1]
+
+    if 'Env' in label and n <= d['Env'][1]:
+        return f[zone][d['Env'][0] + ceil(n) - 1]
+    if ('Env' in label or 'Pak' in label) and n <= d['Pak'][1]:
+        return f[zone][d['Pak'][0] + ceil(n) - 1]
+    if n <= d['Pack'][1]:
+        return f[zone][d['Pack'][0] + ceil(n) - 1]
+    if n <= 300:
+        return f[zone][f.index[f['Weight'] == '300.00'].tolist()[0]] * n
+    if n <= 500:
+        f[zone][f.index[f['Weight'] == '500.00'].tolist()[0]] * n
+    if n <= 1000:
+        f[zone][f.index[f['Weight'] == '1000.00'].tolist()[0]] * n
+    if n <= 2000:
+        f[zone][f.index[f['Weight'] == '2000.00'].tolist()[0]] * n
+    else:
+        return -3
+
+
+def set_charge_label(df):
+    df2 = df.filter(like='Air Waybill Charge')
+    df2 = df2.dropna(axis=1, how='all')
+    df2 = df2.transpose()
+    add_items = OrderedDict()
+    for i in range(len(df2) // 2):
+        for j in range(len(df2.columns)):
+            if df2.iloc[i * 2][j]:
+                add_items[df2.iloc[i * 2][j]] = None
+                df.at[j, df2.iloc[i * 2][j]] = df2.iloc[i * 2 + 1][j]
+
+    add_items.pop('Transportation Charge')
+    add_items.pop('Volume Discount')
+    if 'Subtotal' in add_items:
+        add_items.pop('Subtotal')
+    for i in add_items.keys():
+        if i not in items:
+            items.append(i)
+
+    # df2.to_csv('test.csv', index=False)
+    return df
+
+
+def set_fuel_and_tax(df):
+    df.loc[df.shape[0]] = [0] * len(df.columns)
+    z, zz = get_z(df)
+    df['Fuel %'] = df['Fuel Surcharge'] / (z + df['ntc old'] + (df['Residential Delivery'] / 2))
+    df['Fuel Surcharge'] = round(df['Fuel %'] * (z + df['Net Transportation Charges'] + df['Residential Delivery']), 2)
+
+    t = z + zz + df['Residential Delivery'] + df['Fuel Surcharge'] + df['Net Transportation Charges'] # ?
+
+    df['Canada HST (NS/NF)'] = df['Canada HST (NS)'] + df['Canada HST (NF)']
+    df['Canada HST (PE/NB)'] = df['Canada HST (PE)'] + df['Canada HST (NB)']
+
+    for i, j in tax:
+        df.loc[df[i] > 0, i] = t * j
+    return df
+
+
+def get_z(df):
+    z = (
+        df['Peak Surcharge'] +
+        df['Extended Delivery Area'] +
+        df['Additional Handling Charge'] +
+        df['Saturday Pickup'] +
+        df['Out of Delivery Area Tier B']
+    )
+    zz = (
+        df['Address Correction'] +
+        df['Declared Value Charge'] +
+        df['Third Party Billing']
+
+    )
+    return z, zz
+
+
+def set_tot(df):
+    for i in items[9:]:
+        df[i] = df[i].replace(np.nan, 0)
+        df['Total'] += df[i]
+    return df
+
+
+def set_tot_row(df):
+    for i, j in zip(items[7:], df.dtypes[7:]):
+        if j == 'float64':
+            df.at['tot', i] = df[i].sum()
+    df.at['tot', 'Invoice Date'] = 'Total:'
+    return df
+
+    </py-script>
+
+</body>
+</html>

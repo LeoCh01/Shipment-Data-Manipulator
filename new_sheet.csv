@@ -1,0 +1,12 @@
+,Invoice Date,Air Waybill Number,Service Type,Ship Date,Rated Weight Amount,Rated Weight Units,Pieces,SvcPkg Label,Zone Code,Net Transportation Charges,Fuel Surcharge,Peak Surcharge,Canada GST,Residential Delivery,Out of Delivery Area Tier B,Total
+0,"Jun 13, 2022",776869005960,FedEx International Priority,20220516.0,0.4,L,1.0,FedEx Envelope,N,23.98,6.92,1.4,,,,32.3
+1,"Jun 13, 2022",776891573742,FedEx International Economy,20220518.0,3.1,L,1.0,Customer Packaging,N,41.62,11.72,1.4,,,,54.739999999999995
+2,"Jun 13, 2022",776947823981,FedEx International Economy,20220525.0,35.2,L,1.0,Customer Packaging,K,135.26,36.48,5.04,,,,176.77999999999997
+3,"Jun 13, 2022",776956038119,FedEx International Priority,20220525.0,0.4,L,1.0,FedEx Envelope,N,23.98,6.6,1.4,,,,31.979999999999997
+4,"Jun 13, 2022",776990590248,FedEx Standard Overnight,20220530.0,4.0,L,1.0,Customer Packaging,12,33.444,13.21,,2.3327000000000004,,,48.986700000000006
+5,"Jun 13, 2022",777003606129,FedEx International Priority,20220531.0,0.2,L,1.0,FedEx Envelope,N,23.98,5.9,1.4,,,,31.28
+6,"Jun 13, 2022",777017335800,FedEx International Economy,20220602.0,4.0,L,1.0,Customer Packaging,I,38.46,9.27,1.4,,,,49.13
+7,"Jun 13, 2022",777041309142,FedEx International Economy,20220606.0,4.4,L,1.0,Customer Packaging,A,19.52,6.04,1.4,,4.24,,31.199999999999996
+8,"Jun 13, 2022",777048687492,FedEx International Priority,20220606.0,0.4,L,1.0,FedEx Envelope,L,20.28,13.0,1.4,,,32.5,67.18
+9,,,,,,,,,,,,,,,,
+Total_row,Total:,,,,,,,,,360.524,109.14,14.839999999999998,2.3327000000000004,4.24,32.5,523.5767
